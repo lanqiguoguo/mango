@@ -1,0 +1,112 @@
+USE SubjectDB_Salary
+
+SELECT TableEnName,TableRowCode,BusinessModelCode INTO #EBM  FROM SubjectDB.Common.Entitys_BusinessModel 
+WHERE	SchemaEnName='EmpEncourage'
+AND ISNULL(VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ValidStatus=1
+AND TableEnName IN( 'DefaultSalarySchema','PrepayBonusRatio','SalarySchemaFixedRatio')
+AND BusinessModelCode IN( N'1',N'2', N'3', N'6', N'7', N'15');
+
+--固浮比
+WITH SSFR AS
+(
+SELECT * FROM EmpEncourage.SalarySchemaFixedRatio r JOIN	#EBM e
+ON r.Code=e.TableRowCode
+AND e.TableEnName='SalarySchemaFixedRatio'
+AND ISNULL(r.VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(r.EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+) 
+SELECT t2.Code, GETDATE() AS VersionStartTime, t2.SalarySchemaTypeCode, t2.SalaryLevelCode, '9999-09-09 00:00:00.000' AS VersionEndTime, GETDATE() AS EffectStartTime, '9999-09-09 00:00:00.000' EffectEndTime, t2.Creator, t2.BonusTypeCode, t2.Entity_BusinessFieldProductWorthCode, t1.RatioValue INTO #SSFR FROM SSFR t1 JOIN SSFR t2
+ON t1.BusinessModelCode='1' 
+AND t2.BusinessModelCode<>'1'
+AND t2.BonusTypeCode = t1.BonusTypeCode
+AND t2.SalaryLevelCode = t1.SalaryLevelCode
+AND t2.SalarySchemaTypeCode = t1.SalarySchemaTypeCode
+AND t2.RatioValue<>t1.RatioValue;
+
+UPDATE EmpEncourage.SalarySchemaFixedRatio SET VersionEndTime=DATEADD(SECOND,-1,CONCAT(YEAR(GETDATE()),'-',CASE WHEN MONTH(VersionStartTime) > MONTH(GETDATE()) THEN  MONTH(GETDATE()) ELSE MONTH(VersionStartTime) END ,'-',DAY(GETDATE()))),EffectEndTime=DATEADD(SECOND,-1,CONCAT(YEAR(GETDATE()),'-',CASE WHEN MONTH(VersionStartTime) > MONTH(GETDATE()) THEN  MONTH(GETDATE()) ELSE MONTH(VersionStartTime) END ,'-',DAY(GETDATE()))) WHERE Code IN (SELECT Code FROM #SSFR)
+AND ISNULL(VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE();
+
+INSERT INTO EmpEncourage.SalarySchemaFixedRatio(Code, VersionStartTime, SalarySchemaTypeCode, SalaryLevelCode, VersionEndTime, EffectStartTime, EffectEndTime, Creator, BonusTypeCode, Entity_BusinessFieldProductWorthCode, RatioValue) SELECT * FROM #SSFR;
+
+--预发奖金比
+WITH PBR AS(
+SELECT * FROM EmpEncourage.PrepayBonusRatio r JOIN #EBM e
+ON r.Code=e.TableRowCode
+AND e.TableEnName='PrepayBonusRatio'
+AND ISNULL(r.VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(r.EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+)
+SELECT t2.Code, t1.RatioValue, t2.Creator, t2.SalarySchemaTypeCode,t2. BonusTypeCode, GETDATE() AS VersionStartTime,'9999-09-09 00:00:00.000' AS VersionEndTime, GETDATE() AS EffectStartTime, '9999-09-09 00:00:00.000' AS EffectEndTime, t2.Entity_BusinessFieldProductWorthCode INTO #PBR FROM PBR t1 JOIN PBR t2 
+ON t1.BusinessModelCode='1' 
+AND t2.BusinessModelCode<>'1'
+AND t2.BonusTypeCode = t1.BonusTypeCode
+AND t2.SalarySchemaTypeCode = t1.SalarySchemaTypeCode
+AND t2.RatioValue<>t1.RatioValue;
+
+UPDATE EmpEncourage.PrepayBonusRatio SET VersionEndTime=DATEADD(SECOND,-1,CONCAT(YEAR(GETDATE()),'-',CASE WHEN MONTH(VersionStartTime) > MONTH(GETDATE()) THEN  MONTH(GETDATE()) ELSE MONTH(VersionStartTime) END ,'-',DAY(GETDATE()))),EffectEndTime=DATEADD(SECOND,-1,CONCAT(YEAR(GETDATE()),'-',CASE WHEN MONTH(VersionStartTime) > MONTH(GETDATE()) THEN  MONTH(GETDATE()) ELSE MONTH(VersionStartTime) END ,'-',DAY(GETDATE()))) WHERE Code IN (SELECT Code FROM #PBR)
+AND ISNULL(VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE();
+
+INSERT INTO EmpEncourage.PrepayBonusRatio (Code, RatioValue, Creator, SalarySchemaTypeCode, BonusTypeCode, VersionStartTime, VersionEndTime, EffectStartTime, EffectEndTime, Entity_BusinessFieldProductWorthCode) SELECT * FROM #PBR;
+
+--默认薪酬水平架构
+WITH DSS AS 
+(
+SELECT d.Code,e.BusinessModelCode,CASE p.SalaryGradeCode WHEN NULL THEN '-1' WHEN '' THEN '-1' ELSE p.SalaryGradeCode END AS SalaryGradeCode ,d.BusinessFieldCode,d.IsNeedCityFactory,d.SalaryLevelCode,d.SalarySchemaTypeCode,d.Creator FROM EmpEncourage.DefaultSalarySchema d JOIN #EBM e
+ON d.Code=e.TableRowCode
+AND e.TableEnName='DefaultSalarySchema'
+AND ISNULL(d.VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(d.EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+JOIN EmpEncourage.SalarySchemaBasePay p
+ON p.SalarySchemaCode=d.Code
+AND ISNULL(p.VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(p.EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+)
+SELECT t2.Code, t2.BusinessFieldCode, GETDATE() AS VersionStartTime, t2.SalarySchemaTypeCode, t2.SalaryLevelCode, '9999-09-09 00:00:00.000' AS VersionEndTime, GETDATE() EffectStartTime,'9999-09-09 00:00:00.000' AS EffectEndTime, t2.Creator, t1.IsNeedCityFactory INTO #DSS FROM DSS t1 JOIN DSS t2
+ON t1.BusinessModelCode='1' 
+AND t2.BusinessModelCode<>'1'
+AND t2.SalarySchemaTypeCode=t1.SalarySchemaTypeCode
+AND t2.SalaryLevelCode=t1.SalaryLevelCode
+AND t2.SalaryGradeCode=t1.SalaryGradeCode
+AND t2.IsNeedCityFactory<>t1.IsNeedCityFactory ;
+
+UPDATE EmpEncourage.DefaultSalarySchema SET VersionEndTime=DATEADD(SECOND,-1,CONCAT(YEAR(GETDATE()),'-',CASE WHEN MONTH(VersionStartTime) > MONTH(GETDATE()) THEN  MONTH(GETDATE()) ELSE MONTH(VersionStartTime) END ,'-',DAY(GETDATE()))),EffectEndTime=DATEADD(SECOND,-1,CONCAT(YEAR(GETDATE()),'-',CASE WHEN MONTH(VersionStartTime) > MONTH(GETDATE()) THEN  MONTH(GETDATE()) ELSE MONTH(VersionStartTime) END ,'-',DAY(GETDATE()))) WHERE Code IN (SELECT Code FROM #DSS)
+AND ISNULL(VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE();
+
+INSERT INTO EmpEncourage.DefaultSalarySchema (Code, BusinessFieldCode, VersionStartTime, SalarySchemaTypeCode, SalaryLevelCode, VersionEndTime, EffectStartTime, EffectEndTime, Creator, IsNeedCityFactory) SELECT * FROM #DSS;
+
+--基本工资
+WITH SSBP AS 
+(
+SELECT p.Code,e.BusinessModelCode,CASE p.SalaryGradeCode WHEN NULL THEN '-1' WHEN '' THEN '-1' ELSE p.SalaryGradeCode END AS SalaryGradeCode ,p.BasePay,p.FloatRatio,d.IsNeedCityFactory,d.SalaryLevelCode,d.SalarySchemaTypeCode,p.SalarySchemaCode,p.CnName,p.EnName,p.Creator,p.Modifier,p.ModifyTime,p.ValidStatus,p.SortNo FROM EmpEncourage.DefaultSalarySchema d JOIN #EBM e
+ON d.Code=e.TableRowCode
+AND e.TableEnName='DefaultSalarySchema'
+AND ISNULL(d.VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(d.EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+JOIN EmpEncourage.SalarySchemaBasePay p
+ON p.SalarySchemaCode=d.Code
+AND ISNULL(p.VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(p.EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+)
+SELECT t2.Code,NEWID() AS NewCode,CASE	 t2.BasePay WHEN   t1.BasePay THEN  t2.BasePay ELSE	 t1.BasePay END AS BasePay, CASE	 t2.FloatRatio WHEN   t1.FloatRatio THEN  t2.FloatRatio ELSE	 t1.FloatRatio END AS FloatRatio,GETDATE() AS VersionStartTime, t2.SalarySchemaCode, t2.SalaryGradeCode,'9999-09-09 00:00:00.000' AS VersionEndTime, GETDATE() AS EffectStartTime,'9999-09-09 00:00:00.000' AS EffectEndTime, t2.CnName, t2.EnName, t2.Creator,GETDATE() AS CreateTime, t2.Modifier, t2.ModifyTime, t2.ValidStatus, t2.SortNo INTO #SSBP FROM SSBP t1 JOIN SSBP t2
+ON t1.BusinessModelCode='1' 
+AND t2.BusinessModelCode<>'1'
+AND t2.SalarySchemaTypeCode=t1.SalarySchemaTypeCode
+AND t2.SalaryLevelCode=t1.SalaryLevelCode
+AND t2.SalaryGradeCode=t1.SalaryGradeCode
+AND (t2.BasePay<>t1.BasePay  OR t2.FloatRatio<>t1.FloatRatio );
+
+UPDATE EmpEncourage.SalarySchemaBasePay SET VersionEndTime=DATEADD(SECOND,-1,CONCAT(YEAR(GETDATE()),'-',CASE WHEN MONTH(VersionStartTime) > MONTH(GETDATE()) THEN  MONTH(GETDATE()) ELSE MONTH(VersionStartTime) END ,'-',DAY(GETDATE()))),EffectEndTime=DATEADD(SECOND,-1,CONCAT(YEAR(GETDATE()),'-',CASE WHEN MONTH(VersionStartTime) > MONTH(GETDATE()) THEN  MONTH(GETDATE()) ELSE MONTH(VersionStartTime) END ,'-',DAY(GETDATE()))) WHERE Code IN (SELECT Code FROM #SSBP)
+AND ISNULL(VersionEndTime,'9999-09-09 00:00:00.000')>GETDATE()
+AND ISNULL(EffectEndTime,'9999-09-09 00:00:00.000')>GETDATE();
+
+INSERT INTO EmpEncourage.SalarySchemaBasePay( Code, BasePay, FloatRatio, VersionStartTime, SalarySchemaCode, SalaryGradeCode, VersionEndTime, EffectStartTime, EffectEndTime, CnName, EnName, Creator, CreateTime, Modifier, ModifyTime, ValidStatus, SortNo) SELECT NewCode, BasePay, FloatRatio, VersionStartTime, SalarySchemaCode, SalaryGradeCode, VersionEndTime, EffectStartTime, EffectEndTime, CnName, EnName, Creator, CreateTime, Modifier, ModifyTime, ValidStatus, SortNo FROM #SSBP;
+
+DROP TABLE #EBM
+DROP TABLE #PBR
+DROP TABLE #DSS
+DROP TABLE #SSBP
+DROP TABLE #SSFR
